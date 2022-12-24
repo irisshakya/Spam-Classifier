@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 from pyspark.ml.linalg import Vectors
@@ -14,17 +15,20 @@ from pyspark import SparkContext, SparkConf
 sc = SparkContext(master = 'local')
 spark = SparkSession.builder.appName('pySpark word-count').config('spark.some.config.option', 'some-value')             .getOrCreate()
 
+
 # data import
 data = spark.read.format("csv").option("header",True).load("/Users/iris/spam_data.csv") \
     .withColumnRenamed("Category", "label") \
     .withColumnRenamed("Message", "text")
 data_df = data.toDF("label", "text")
 
+
 data.groupBy('label').count().show()
 
 data_df.show(3)
 print(data_df.count(), data_df.columns)
 type(data_df)
+
 
 from pyspark.sql.functions import *
 from pyspark.sql.types import IntegerType
@@ -36,11 +40,24 @@ data_df = data_df.withColumn('label', regexp_replace('label', 'ham', '1'))
 data_df = data_df.withColumn('label', data_df.label.cast(IntegerType()))
 
 print(data_df.printSchema())
+
+
+# # pre-processing
+# post_data = Tokenizer(inputCol='text', outputCol='words').transform(data_df)
+
+# #test_post_data = RegexTokenizer(inputCol='text', outputCol='token', pattern='\\W+')
+
+# #countTokens = udf(lambda x: len(x), IntegerType())
+# post_data.show(4)
+# post_data.columns
+# from pyspark.sql.functions import col 
+# post_data.select('label', 'text', 'words').withColumn('token', countTokens(col('words'))).show(5)
+
 data_df.show(4)
 
-# dropNULL we need to delete empty cells
 data_df = data_df.dropna()
 data_df.groupBy('label').count().show()
+
 
 # 1. tokenize and clean data sentences using Tokenizer
 tokenizer = Tokenizer(inputCol='text', outputCol='words')
@@ -59,10 +76,10 @@ idf = IDF(inputCol='hasher', outputCol='features')
 idf_df = idf.fit(hashed_df)
 output_df = idf_df.transform(hashed_df)
 
+
 output_df = output_df.select('features', 'label')
 output_df.show(5)
 
-# train_test_split data
 train_1, test_1 = output_df.randomSplit([0.8, 0.2], seed=666)
 train_2, test_2 = output_df.randomSplit([0.8, 0.2], seed=768)
 train_3, test_3 = output_df.randomSplit([0.8, 0.2], seed=563)
@@ -70,28 +87,32 @@ train_4, test_4 = output_df.randomSplit([0.8, 0.2], seed=356)
 train_5, test_5 = output_df.randomSplit([0.8, 0.2], seed=879)
 
 
+
 # train test
 dt_clf_1 = DecisionTreeClassifier(featuresCol='features', labelCol="label").fit(train_1)
 dt_pred_1 = dt_clf_1.transform(test_1)
 dt_pred_1.show(5)
 
+
 check_accuracy = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='accuracy') \
-                .evaluate(dt_pred)
+                .evaluate(dt_pred_1)
 check_precision = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='weightedPrecision')   \
-                .evaluate(dt_pred)
+                .evaluate(dt_pred_1)
 check_recall = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='weightedRecall') \
-                .evaluate(dt_pred)
+                .evaluate(dt_pred_1)
 check_f = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='f1')  \
-                .evaluate(dt_pred)
+                .evaluate(dt_pred_1)
+
 
 print('accuracy: %0.4f' % check_accuracy)
 print('precision: %0.4f' % check_precision)
 print('recall: %0.4f' % check_recall)
 print('F1 score: %0.4f' % check_f)
 
-dt_classifier.featureImportances
 
-# uncomment to check the accuracy for Random Forest
+dt_clf_1.featureImportances
+
+
 # # from pyspark.ml.classification import RandomForestClassifier
 # # rf = RandomForestClassifier(labelCol='label', featuresCol='')
 # eval = BinaryClassificationEvaluator()
@@ -101,7 +122,9 @@ dt_classifier.featureImportances
 # test_accuracy = eval.evaluate(test_predictions)
 # print('Test accuracy: {:.4g}'.format(test_accuracy))
 
+
 # create Cross-Validator and ParamGrid
+# pipeline = Pipeline(stages = [tokenizer, bigrams, hasherTF, idf])
 params = ParamGridBuilder().build()
 
 # Run k-fold Cross-Validator 
@@ -121,7 +144,8 @@ print('CV_3: %0.4f' %cv_model_3.avgMetrics[0])
 print('CV_4: %0.4f' %cv_model_4.avgMetrics[0])
 print('CV_5: %0.4f' %cv_model_5.avgMetrics[0])
 
-# prediction model for all data splits
+
+# prediction model
 cv_prediction_1 = cv_model_1.transform(test_1)
 cv_prediction_1 = cv_prediction_1.select('label', 'prediction')
 
@@ -137,7 +161,8 @@ cv_prediction_4 = cv_prediction_4.select('label', 'prediction')
 cv_prediction_5 = cv_model_4.transform(test_5)
 cv_prediction_5 = cv_prediction_5.select('label', 'prediction')
 
-# MulticlassClassification for all data splits
+
+
 cv_prediction_1.groupBy('label','prediction').count().show()
 pred_1_precision = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='weightedPrecision')
 pred_1_recall = MulticlassClassificationEvaluator(predictionCol='prediction', labelCol='label', metricName='weightedRecall')
